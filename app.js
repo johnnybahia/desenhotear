@@ -9,7 +9,7 @@
     const s = JSON.parse(localStorage.getItem(LS_ESTADO));
     if (s && s.motif) cfg = E.norm(s);
   } catch (e) { /* sem armazenamento */ }
-  const ui = { tool: 'paint', zoom: 2, reps: 2 };
+  const ui = { tool: 'paint', zoom: 2, reps: 2, src: 'texto', img: null, prev: null, undo: [], genNote: '' };
   let res = null;
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -42,6 +42,7 @@
     renderQuadros();
     renderCorrente();
     renderProducao();
+    renderGen();
   }
 
   // ---------- Entradas ----------
@@ -58,12 +59,17 @@
     $('detalheMode').value = cfg.detalheMode;
     $('verso').checked = cfg.versoLegivel;
     $('intercala').checked = cfg.intercala;
+    $('gMaxQ').value = cfg.maxQuadros || '';
     document.querySelectorAll('input[name=estrutura]').forEach((r) => { r.checked = r.value === cfg.estrutura; });
   }
 
   function bind() {
     numFields.forEach((k) => {
-      $(k).addEventListener('input', () => { cfg[k] = $(k).value === '' ? 0 : Number($(k).value); schedule(); });
+      $(k).addEventListener('input', () => {
+        cfg[k] = $(k).value === '' ? 0 : Number($(k).value);
+        if (k === 'maxQuadros') $('gMaxQ').value = $(k).value;
+        schedule();
+      });
     });
     prodFields.forEach((k) => {
       $(k).addEventListener('input', () => { cfg.prod[k] = $(k).value; schedule(); });
@@ -83,12 +89,13 @@
     sel.innerHTML = '<option value="">Escolher modelo…</option>' + E.PRESETS.map((p) => `<option value="${p.id}">${esc(p.nome)}</option>`).join('');
     sel.addEventListener('change', () => {
       const p = E.PRESETS.find((x) => x.id === sel.value);
-      if (p) { cfg.motif = E.motifFromRows(p.rows); syncInputs(); schedule(); }
+      if (p) { snap(); cfg.motif = E.motifFromRows(p.rows); syncInputs(); schedule(); }
       sel.value = '';
     });
 
     // Tamanho do motivo
     const resize = () => {
+      snap();
       const w = Math.max(1, Math.min(80, parseInt($('mw').value, 10) || 1));
       const h = Math.max(1, Math.min(120, parseInt($('mh').value, 10) || 1));
       const cells = [];
@@ -110,9 +117,13 @@
         document.querySelectorAll('[data-tool]').forEach((x) => x.classList.toggle('on', x === b));
       });
     });
-    $('btnLimpar').addEventListener('click', () => { cfg.motif.cells = cfg.motif.cells.map((r) => r.map(() => 0)); schedule(); });
-    $('btnInverter').addEventListener('click', () => { cfg.motif.cells = cfg.motif.cells.map((r) => r.map((v) => (v ? 0 : 1))); schedule(); });
-    $('btnEspelhar').addEventListener('click', () => { cfg.motif.cells = cfg.motif.cells.map((r) => r.slice().reverse()); schedule(); });
+    $('btnLimpar').addEventListener('click', () => { snap(); cfg.motif.cells = cfg.motif.cells.map((r) => r.map(() => 0)); schedule(); });
+    $('btnDesfazer').addEventListener('click', desfazer);
+    $('btnInverter').addEventListener('click', () => posicao({ invert: true }));
+    $('btnEspelhar').addEventListener('click', () => posicao({ flipH: true }));
+    $('btnEspelharV').addEventListener('click', () => posicao({ flipV: true }));
+    $('btnGirarD').addEventListener('click', () => posicao({ rot: 90 }));
+    $('btnGirarE').addEventListener('click', () => posicao({ rot: 270 }));
 
     // Visualização
     $('zoom').addEventListener('input', () => { ui.zoom = Number($('zoom').value); renderImagens(); });
@@ -204,7 +215,7 @@
     const v = ui.tool === 'paint' ? 1 : 0;
     if (cfg.motif.cells[r][c] !== v) { cfg.motif.cells[r][c] = v; schedule(); }
   }
-  grid.addEventListener('pointerdown', (ev) => { painting = true; grid.setPointerCapture(ev.pointerId); paintAt(ev); ev.preventDefault(); });
+  grid.addEventListener('pointerdown', (ev) => { snap(); painting = true; grid.setPointerCapture(ev.pointerId); paintAt(ev); ev.preventDefault(); });
   grid.addEventListener('pointermove', (ev) => { if (painting) paintAt(ev); });
   const stop = () => { painting = false; };
   grid.addEventListener('pointerup', stop);
@@ -237,6 +248,265 @@
       g.fillStyle = rows[i][j] ? cfg.cores.fundo : cfg.cores.trama;
       g.fillRect(ox + j * s, oy + i * s, s - 1, s - 1);
     }
+  }
+
+  // ---------- Desfazer e posição (grade manual) ----------
+  function snap() {
+    const s = JSON.stringify(cfg.motif);
+    if (ui.undo[ui.undo.length - 1] === s) return;
+    ui.undo.push(s);
+    if (ui.undo.length > 40) ui.undo.shift();
+  }
+  function msgGrade(t) { const el = $('gridMsg'); el.textContent = t || ''; el.hidden = !t; }
+  function desfazer() {
+    const s = ui.undo.pop();
+    if (!s) { msgGrade('Nada para desfazer.'); return; }
+    msgGrade('');
+    cfg.motif = JSON.parse(s);
+    syncInputs();
+    schedule();
+  }
+  function posicao(op) {
+    const r = E.transformCells(cfg.motif.cells, op);
+    if (r[0].length > E.MAXW || r.length > E.MAXH) {
+      msgGrade('Não cabe nessa posição: a grade vai até ' + E.MAXW + ' colunas × ' + E.MAXH + ' linhas.');
+      return;
+    }
+    msgGrade('');
+    snap();
+    cfg.motif = { w: r[0].length, h: r.length, cells: r };
+    syncInputs();
+    schedule();
+  }
+
+  // ---------- Texto / imagem -> desenho ----------
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const GIDS = ['txt', 'txtFonte', 'txtEscala', 'txtFamilia', 'txtAltura', 'txtEspaco', 'imgCols', 'imgRows', 'imgLock', 'limiar', 'dither', 'morf', 'invCor', 'aspecto', 'simp'];
+  const gv = (id) => ($(id).type === 'checkbox' ? $(id).checked : $(id).value);
+  let genCache = { key: null, val: null };
+
+  function aspecto() {
+    const v = parseFloat(String($('aspecto').value).replace(',', '.'));
+    return v > 0.2 && v < 5 ? v : 1;
+  }
+  function aspectoProducao() {
+    const num = (v) => { const n = parseFloat(String(v).replace(',', '.')); return n > 0 ? n : 0; };
+    const fcm = num(cfg.prod.fiosCm), bpcm = num(cfg.prod.bpcm);
+    if (!fcm || !bpcm) return null;
+    const fac = cfg.estrutura === 'chapado' ? 1 : 2;
+    const fios = cfg.fiosDetalhe + (cfg.intercala ? cfg.fiosFundo : 0);
+    return fios / fcm / (fac / bpcm);
+  }
+
+  // Texto com fonte do aparelho: desenha grande, recorta e reduz por média de área
+  function textoSistema(t, linhas, asp, familia) {
+    const fs = 160;
+    const cv = document.createElement('canvas');
+    let g = cv.getContext('2d');
+    if (!g) return null;
+    g.font = 'bold ' + fs + 'px ' + familia;
+    const tw = Math.ceil(g.measureText(t).width);
+    cv.width = Math.max(1, Math.min(8000, tw + fs));
+    cv.height = fs * 2;
+    g = cv.getContext('2d');
+    g.font = 'bold ' + fs + 'px ' + familia;
+    g.fillStyle = '#000';
+    g.textBaseline = 'alphabetic';
+    g.fillText(t, fs / 2, fs * 1.4);
+    const W = cv.width, H = cv.height;
+    const d = g.getImageData(0, 0, W, H).data;
+    let x0 = W, x1 = -1, y0 = H, y1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (d[(y * W + x) * 4 + 3] > 25) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    if (x1 < 0) return null;
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    const dark = new Float32Array(bw * bh);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) dark[y * bw + x] = d[((y0 + y) * W + (x0 + x)) * 4 + 3] / 255;
+    let rows = clamp(linhas, 5, E.MAXH);
+    let cols = Math.max(1, Math.round(((bw / bh) * rows) / asp));
+    let cortado = false;
+    if (cols > E.MAXW) { rows = Math.max(5, Math.floor((rows * E.MAXW) / cols)); cols = E.MAXW; cortado = true; }
+    const cells = E.toBits(E.resampleBox(dark, bw, bh, cols, rows), cols, rows, { limiar: 0.5 });
+    return { cells, cortado };
+  }
+
+  function gerar() {
+    const avisos = [];
+    let cells;
+    if (ui.src === 'texto') {
+      const t = $('txt').value;
+      if (!t.trim()) return { vazio: true, msg: 'Digite um texto para ver a prévia.' };
+      if ($('txtFonte').value === 'pixel') {
+        const r = E.renderPixelText(t, { escala: Number($('txtEscala').value), espaco: Number($('txtEspaco').value) });
+        if (r.vazio) return { vazio: true, msg: 'Nenhum caractere conhecido. Use letras, números ou - . , ! ? : + /' };
+        cells = r.cells;
+        if (r.ignorados.length) avisos.push('Sem desenho para: ' + r.ignorados.join(' '));
+        if (r.cortado) avisos.push('Texto cortado em ' + E.MAXW + ' colunas. Diminua o tamanho ou o texto.');
+      } else {
+        const r = textoSistema(t, parseInt($('txtAltura').value, 10) || 14, aspecto(), $('txtFamilia').value);
+        if (!r) return { vazio: true, msg: 'Não foi possível desenhar esse texto neste aparelho.' };
+        cells = r.cells;
+        if (r.cortado) avisos.push('Texto largo: a altura foi reduzida para caber em ' + E.MAXW + ' colunas.');
+      }
+    } else {
+      if (!ui.img) return { vazio: true, msg: 'Escolha uma imagem para ver a prévia.' };
+      const cols = clamp(parseInt($('imgCols').value, 10) || 24, 4, E.MAXW);
+      const rows = clamp(parseInt($('imgRows').value, 10) || 24, 4, E.MAXH);
+      const dark = E.resampleBox(ui.img.dark, ui.img.w, ui.img.h, cols, rows);
+      cells = E.toBits(dark, cols, rows, { limiar: 1 - Number($('limiar').value) / 100, dither: $('dither').checked });
+    }
+    const m = $('morf').value;
+    if (m) cells = E.morfologia(cells, m);
+    if ($('invCor').checked) cells = E.transformCells(cells, { invert: true });
+    if (!cells.some((r) => r.some((v) => v))) avisos.push('O resultado ficou sem nenhum quadrado pintado. Ajuste a quantidade de preto ou inverta.');
+    return { cells, avisos };
+  }
+
+  function genKey() {
+    const sig = Object.assign({}, cfg, { motif: 0, cores: 0, prod: 0 });
+    return JSON.stringify([GIDS.map(gv), ui.src, ui.img ? ui.img.id : 0, sig]);
+  }
+
+  function renderGen() {
+    const info = $('prevInfo'), cv = $('prev');
+    const key = genKey();
+    if (genCache.key !== key) {
+      let v = gerar();
+      if (!v.vazio && $('simp').checked && cfg.maxQuadros > 0) {
+        const antes = E.colunasDistintas(v.cells);
+        const s = E.colunasParaCaber(cfg, v.cells, cfg.maxQuadros);
+        if (s) { if (s.n < antes) v.simplificado = { de: antes, para: s.n }; v.cells = s.cells; }
+        else v.avisos.push('Nem simplificando ao máximo cabe em ' + cfg.maxQuadros + ' quadros: só o fundo já usa mais que isso.');
+      }
+      genCache = { key, val: v };
+    }
+    const v = genCache.val;
+    const nota = ui.genNote ? '<div class="warn">' + esc(ui.genNote) + '</div>' : '';
+    ui.genNote = '';
+    if (v.vazio) {
+      ui.prev = null;
+      cv.width = 1; cv.height = 1; cv.style.width = '0'; cv.style.height = '0';
+      info.innerHTML = nota + '<div class="warn">' + esc(v.msg) + '</div>';
+      return;
+    }
+    const cells = v.cells, w = cells[0].length, h = cells.length;
+    ui.prev = { w, h, cells };
+    const r = E.build(Object.assign({}, cfg, { motif: ui.prev }), { light: true });
+    const dist = E.colunasDistintas(cells);
+    const lim = cfg.maxQuadros > 0;
+    const estoura = lim && r.quadros > cfg.maxQuadros;
+    let html = nota + '<div><b>' + w + ' × ' + h + '</b> (colunas × linhas)</div>';
+    html += '<div>Colunas distintas: <b>' + dist + '</b>' + (v.simplificado ? ' (eram ' + v.simplificado.de + ')' : '') + '</div>';
+    html += '<div class="' + (estoura ? 'bad' : '') + '">Quadros: <b>' + r.quadros + '</b>' + (lim ? ' (limite ' + cfg.maxQuadros + ')' : '') + '</div>';
+    html += '<div>Corrente: <b>' + r.pecas + '</b> peças · Fios: <b>' + r.fiosTotal + '</b></div>';
+    if (r.flut.max) html += '<div class="' + (cfg.maxFlut && r.flut.max > cfg.maxFlut ? 'warn' : '') + '">Flutuação máx.: <b>' + r.flut.max + '</b> passadas</div>';
+    if (estoura) html += '<div class="bad">Passa do limite. Marque "Simplificar" ou escolha uma opção mais simples.</div>';
+    (v.avisos || []).forEach((a) => { html += '<div class="warn">' + esc(a) + '</div>'; });
+    info.innerHTML = html;
+    // desenho da prévia
+    const cs = clamp(Math.min(Math.floor(300 / w), Math.floor(340 / h)), 3, 14);
+    const W = w * cs + 1, H = h * cs + 1, dpr = window.devicePixelRatio || 1;
+    cv.width = Math.ceil(W * dpr); cv.height = Math.ceil(H * dpr);
+    cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      g.fillStyle = cells[y][x] ? cfg.cores.detalhe : 'rgba(128,128,128,0.12)';
+      g.fillRect(x * cs + 1, y * cs + 1, cs - 1, cs - 1);
+    }
+  }
+
+  let genPend = false;
+  function schedGen() {
+    if (genPend) return;
+    genPend = true;
+    requestAnimationFrame(() => { genPend = false; renderGen(); });
+  }
+
+  function proporcaoImagem(origem) {
+    if (!ui.img || !$('imgLock').checked) return;
+    const asp = aspecto();
+    if (origem === 'cols') {
+      $('imgRows').value = clamp(Math.round(clamp(parseInt($('imgCols').value, 10) || 24, 4, E.MAXW) * (ui.img.h / ui.img.w) * asp), 4, E.MAXH);
+    } else {
+      $('imgCols').value = clamp(Math.round(((clamp(parseInt($('imgRows').value, 10) || 24, 4, E.MAXH)) * (ui.img.w / ui.img.h)) / asp), 4, E.MAXW);
+    }
+  }
+
+  function carregarImagem(file) {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      const sc = Math.min(1, 1024 / Math.max(im.width, im.height));
+      const w = Math.max(1, Math.round(im.width * sc)), h = Math.max(1, Math.round(im.height * sc));
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, w, h);
+      g.drawImage(im, 0, 0, w, h);
+      ui.img = { id: Date.now(), w, h, dark: E.darknessFromRGBA(g.getImageData(0, 0, w, h).data, w, h) };
+      URL.revokeObjectURL(url);
+      proporcaoImagem('cols');
+      renderGen();
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); ui.img = null; ui.genNote = 'Não foi possível abrir essa imagem.'; renderGen(); };
+    im.src = url;
+  }
+
+  function bindGen() {
+    document.querySelectorAll('[data-src]').forEach((b) => {
+      b.addEventListener('click', () => {
+        ui.src = b.dataset.src;
+        document.querySelectorAll('[data-src]').forEach((x) => x.classList.toggle('on', x === b));
+        $('g-texto').hidden = ui.src !== 'texto';
+        $('g-imagem').hidden = ui.src !== 'imagem';
+        renderGen();
+      });
+    });
+    const fonte = () => {
+      const pix = $('txtFonte').value === 'pixel';
+      $('lblEscala').hidden = !pix;
+      $('lblEspaco').hidden = !pix;
+      $('lblFamilia').hidden = pix;
+      $('lblAltura').hidden = pix;
+    };
+    $('txtFonte').addEventListener('change', fonte);
+    fonte();
+    GIDS.forEach((id) => {
+      const ev = $(id).type === 'checkbox' || $(id).tagName === 'SELECT' ? 'change' : 'input';
+      $(id).addEventListener(ev, () => {
+        if (id === 'imgCols') proporcaoImagem('cols');
+        if (id === 'imgRows') proporcaoImagem('rows');
+        if (id === 'aspecto') proporcaoImagem('cols');
+        schedGen();
+      });
+    });
+    $('gMaxQ').addEventListener('input', () => {
+      cfg.maxQuadros = $('gMaxQ').value === '' ? 0 : Number($('gMaxQ').value);
+      $('maxQuadros').value = cfg.maxQuadros ? cfg.maxQuadros : '';
+      schedule();
+    });
+    $('btnAspProd').addEventListener('click', () => {
+      const a = aspectoProducao();
+      if (a == null) { ui.genNote = 'Preencha fios por cm e batidas por cm na seção Produção.'; renderGen(); return; }
+      $('aspecto').value = String(Math.round(a * 100) / 100).replace('.', ',');
+      proporcaoImagem('cols');
+      renderGen();
+    });
+    $('imgFile').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) carregarImagem(f); });
+    $('btnAplicar').addEventListener('click', () => {
+      if (!ui.prev) { ui.genNote = 'Nada para aplicar ainda.'; renderGen(); return; }
+      snap();
+      cfg.motif = { w: ui.prev.w, h: ui.prev.h, cells: ui.prev.cells.map((r) => r.slice()) };
+      msgGrade('');
+      syncInputs();
+      schedule();
+      const sec = $('sec-desenho');
+      if (sec.scrollIntoView) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   // ---------- Resultado ----------
@@ -444,6 +714,7 @@
   // ---------- Início ----------
   syncInputs();
   bind();
+  bindGen();
   renderProjetos();
   update();
 })();

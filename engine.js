@@ -373,8 +373,224 @@
     return { cols: cols.map((c) => ({ k: key(c), w: c.threads })), rows };
   }
 
+
+  // ---------- Texto e imagem -> grade ----------
+  const FONT = {
+    ' ': ['...', '...', '...', '...', '...', '...', '...'],
+    'A': ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    'B': ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+    'C': ['.####', '#....', '#....', '#....', '#....', '#....', '.####'],
+    'D': ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+    'E': ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+    'F': ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+    'G': ['.####', '#....', '#....', '#..##', '#...#', '#...#', '.###.'],
+    'H': ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    'I': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
+    'J': ['..###', '...#.', '...#.', '...#.', '...#.', '#..#.', '.##..'],
+    'K': ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
+    'L': ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+    'M': ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'],
+    'N': ['#...#', '##..#', '##..#', '#.#.#', '#..##', '#..##', '#...#'],
+    'O': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    'P': ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+    'Q': ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'],
+    'R': ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+    'S': ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+    'T': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+    'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    'V': ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+    'W': ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
+    'X': ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+    'Y': ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+    'Z': ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+    '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+    '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+    '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+    '3': ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+    '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+    '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+    '6': ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'],
+    '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+    '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+    '9': ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
+    '.': ['.', '.', '.', '.', '.', '.', '#'],
+    ',': ['..', '..', '..', '..', '..', '.#', '#.'],
+    '!': ['#', '#', '#', '#', '#', '.', '#'],
+    ':': ['.', '.', '#', '.', '#', '.', '.'],
+    "'": ['#', '#', '.', '.', '.', '.', '.'],
+    '-': ['...', '...', '...', '###', '...', '...', '...'],
+    '+': ['.....', '..#..', '..#..', '#####', '..#..', '..#..', '.....'],
+    '/': ['....#', '....#', '...#.', '..#..', '.#...', '#....', '#....'],
+    '?': ['.###.', '#...#', '....#', '...#.', '..#..', '.....', '..#..'],
+  };
+
+  const MAXW = 80, MAXH = 120;
+
+  // Texto com fonte de pixel 5x7 (acentos são removidos). escala = 1..8, espaco = colunas entre letras.
+  function renderPixelText(texto, opt) {
+    opt = opt || {};
+    const s = Math.max(1, Math.min(8, Math.round(opt.escala || 1)));
+    const esp = Math.max(0, Math.min(10, Math.round(opt.espaco == null ? 1 : opt.espaco)));
+    const limpo = String(texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+    const glyphs = [], ignorados = [];
+    for (const ch of limpo) {
+      if (FONT[ch]) glyphs.push(FONT[ch]);
+      else if (ch.trim() && !ignorados.includes(ch)) ignorados.push(ch);
+    }
+    if (!glyphs.length) return { cells: [[0]], w: 1, h: 1, vazio: true, ignorados, cortado: false };
+    const sep = '.'.repeat(esp);
+    const base = [];
+    for (let r = 0; r < 7; r++) base.push(glyphs.map((g) => g[r]).join(sep));
+    let cells = [];
+    base.forEach((line) => {
+      const row = [];
+      for (const c of line) for (let k = 0; k < s; k++) row.push(c === '#' ? 1 : 0);
+      for (let k = 0; k < s; k++) cells.push(row.slice());
+    });
+    let cortado = false;
+    if (cells.length > MAXH) { cells = cells.slice(0, MAXH); cortado = true; }
+    if (cells[0].length > MAXW) { cells = cells.map((r) => r.slice(0, MAXW)); cortado = true; }
+    return { cells, w: cells[0].length, h: cells.length, vazio: false, ignorados, cortado };
+  }
+
+  // Reduz um mapa de valores (sw x sh) para dw x dh fazendo média ponderada por área.
+  function resampleBox(src, sw, sh, dw, dh) {
+    const out = new Float32Array(dw * dh);
+    for (let dy = 0; dy < dh; dy++) {
+      const y0 = (dy * sh) / dh, y1 = ((dy + 1) * sh) / dh;
+      for (let dx = 0; dx < dw; dx++) {
+        const x0 = (dx * sw) / dw, x1 = ((dx + 1) * sw) / dw;
+        let sum = 0, area = 0;
+        for (let y = Math.floor(y0); y < Math.ceil(y1) && y < sh; y++) {
+          const wy = Math.min(y + 1, y1) - Math.max(y, y0);
+          if (wy <= 0) continue;
+          for (let x = Math.floor(x0); x < Math.ceil(x1) && x < sw; x++) {
+            const wx = Math.min(x + 1, x1) - Math.max(x, x0);
+            if (wx <= 0) continue;
+            sum += src[y * sw + x] * wx * wy;
+            area += wx * wy;
+          }
+        }
+        out[dy * dw + dx] = area ? sum / area : 0;
+      }
+    }
+    return out;
+  }
+
+  // RGBA (ImageData.data) -> "escuridão" 0..1 (transparente conta como branco)
+  function darknessFromRGBA(data, w, h) {
+    const out = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const a = data[i * 4 + 3] / 255;
+      const lum = (0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]) / 255;
+      out[i] = 1 - (lum * a + (1 - a));
+    }
+    return out;
+  }
+
+  // Escuridão 0..1 -> grade 0/1. limiar: quanto mais baixo, mais pinta. dither: pontilhado Floyd–Steinberg.
+  function toBits(vals, w, h, opt) {
+    opt = opt || {};
+    const lim = opt.limiar == null ? 0.5 : opt.limiar;
+    const a = Array.from(vals);
+    if (opt.dither) for (let i = 0; i < a.length; i++) a[i] = a[i] - lim + 0.5;
+    const t = opt.dither ? 0.5 : lim;
+    const out = Array.from({ length: h }, () => new Array(w).fill(0));
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x, old = a[i], nv = old >= t ? 1 : 0;
+        out[y][x] = nv;
+        if (opt.dither) {
+          const err = old - nv;
+          if (x + 1 < w) a[i + 1] += (err * 7) / 16;
+          if (y + 1 < h) {
+            if (x > 0) a[i + w - 1] += (err * 3) / 16;
+            a[i + w] += (err * 5) / 16;
+            if (x + 1 < w) a[i + w + 1] += err / 16;
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  // Posição: rot (0/90/180/270 horário), flipH (espelha esquerda/direita), flipV (de cima para baixo), invert (troca pintado/vazio)
+  function transformCells(cells, o) {
+    o = o || {};
+    let g = cells.map((r) => r.slice());
+    const rot = ((Math.round((o.rot || 0) / 90) * 90) % 360 + 360) % 360;
+    for (let k = 0; k < rot / 90; k++) {
+      const H = g.length, W = g[0].length;
+      const n = Array.from({ length: W }, () => new Array(H).fill(0));
+      for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) n[c][H - 1 - r] = g[r][c];
+      g = n;
+    }
+    if (o.flipH) g = g.map((r) => r.slice().reverse());
+    if (o.flipV) g = g.slice().reverse();
+    if (o.invert) g = g.map((r) => r.map((v) => (v ? 0 : 1)));
+    return g;
+  }
+
+  function colunasDistintas(cells) {
+    const set = new Set();
+    for (let c = 0; c < cells[0].length; c++) set.add(cells.map((r) => (r[c] ? 1 : 0)).join(''));
+    return set.size;
+  }
+
+  // Junta colunas parecidas até sobrarem no máximo `max` colunas distintas (a menos frequente vira a mais parecida).
+  function simplificarColunas(cells, max) {
+    const H = cells.length, W = cells[0].length;
+    let cols = [];
+    for (let c = 0; c < W; c++) cols.push(cells.map((r) => (r[c] ? 1 : 0)));
+    const key = (v) => v.join('');
+    const dist = (a, b) => { let d = 0; for (let i = 0; i < H; i++) if (a[i] !== b[i]) d++; return d; };
+    max = Math.max(1, max);
+    for (let guard = 0; guard < W * W; guard++) {
+      const cnt = new Map();
+      cols.forEach((v) => cnt.set(key(v), (cnt.get(key(v)) || 0) + 1));
+      if (cnt.size <= max) break;
+      const uniq = Array.from(cnt.keys()).map((k) => ({ k, v: k.split('').map(Number), n: cnt.get(k) }));
+      let best = null;
+      for (let i = 0; i < uniq.length; i++) for (let j = i + 1; j < uniq.length; j++) {
+        const d = dist(uniq[i].v, uniq[j].v);
+        const custo = d * Math.min(uniq[i].n, uniq[j].n);
+        if (!best || custo < best.custo) best = { custo, a: uniq[i], b: uniq[j] };
+      }
+      const de = best.a.n < best.b.n ? best.a : best.b;
+      const para = de === best.a ? best.b : best.a;
+      cols = cols.map((v) => (key(v) === de.k ? para.v.slice() : v));
+    }
+    return cells.map((_, r) => cols.map((v) => v[r]));
+  }
+
+  // Simplifica coluna a coluna até caber em `maxQuadros`. Retorna { n, cells } (n = colunas distintas finais) ou null.
+  function colunasParaCaber(cfgIn, cells, maxQuadros) {
+    const base = norm(cfgIn);
+    const q = (c) => build(Object.assign({}, base, { motif: { w: c[0].length, h: c.length, cells: c } }), { light: true }).quadros;
+    let cur = cells;
+    for (let n = colunasDistintas(cells); n >= 1; n--) {
+      if (q(cur) <= maxQuadros) return { n: colunasDistintas(cur), cells: cur };
+      if (n > 1) cur = simplificarColunas(cur, n - 1);
+    }
+    return null;
+  }
+
+  // Morfologia 4-vizinhos: 'engrossar', 'afinar' ou 'contorno'
+  function morfologia(cells, modo) {
+    const H = cells.length, W = cells[0].length;
+    const at = (r, c) => (r >= 0 && c >= 0 && r < H && c < W && cells[r][c] ? 1 : 0);
+    return cells.map((row, r) => row.map((v, c) => {
+      const viz = at(r - 1, c) + at(r + 1, c) + at(r, c - 1) + at(r, c + 1);
+      if (modo === 'engrossar') return v || viz > 0 ? 1 : 0;
+      if (modo === 'afinar') return v && viz === 4 ? 1 : 0;
+      if (modo === 'contorno') return v && viz < 4 ? 1 : 0;
+      return v ? 1 : 0;
+    }));
+  }
+
   return {
     LIGAMENTOS, PRESETS, motifFromRows, defaults, norm, build, alternativas, alternativasDistancia,
     chainRows, csv, view, fits,
+    renderPixelText, resampleBox, darknessFromRGBA, toBits, transformCells, colunasDistintas, simplificarColunas, colunasParaCaber, morfologia, MAXW, MAXH,
   };
 });

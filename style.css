@@ -89,6 +89,14 @@ figcaption { text-align: center; font-size: 13px; color: var(--muted); margin-to
 .pitem { display: flex; gap: 8px; align-items: center; justify-content: space-between; background: var(--bg); border-radius: 8px; padding: 6px 10px; }
 .pitem button { font: inherit; font-size: 13px; }
 .foot { text-align: center; color: var(--muted); font-size: 12px; padding: 16px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.more { margin: 8px 0; }
+.more summary { cursor: pointer; font-size: 14px; color: var(--muted); padding: 6px 0; }
+.genprev { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; margin-top: 10px; }
+#prev { max-width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.previnfo { font-size: 14px; margin-bottom: 10px; display: grid; gap: 4px; }
+.previnfo .bad { color: var(--red); }
+.previnfo .warn { color: var(--amber); }
 @media print {
   body { background: #fff; color: #000; }
   .top, .card:not(.results), .tools, .hint, .foot, .alts { display: none !important; }

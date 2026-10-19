@@ -145,3 +145,125 @@ console.log(`\n${n} testes passaram`);
   assert.strictEqual(r.quadros, 4);
   console.log('ok - sem fundo entre colunas do detalhe');
 })();
+
+// ---- texto / imagem / posição ----
+(function () {
+  const ok = (n) => console.log('ok - ' + n);
+  const A = E.PRESETS[0].rows.map((r) => r.split('').map((c) => (c === '#' ? 1 : 0)));
+
+  // fonte de pixel: "A" é igual ao modelo A
+  const a = E.renderPixelText('A');
+  assert.deepStrictEqual(a.cells, A);
+  ok('fonte 5x7: A igual ao modelo');
+
+  // largura de "AB" = 5 + 1 + 5; espaço configurável; escala
+  assert.strictEqual(E.renderPixelText('AB').w, 11);
+  assert.strictEqual(E.renderPixelText('AB', { espaco: 2 }).w, 12);
+  const e2 = E.renderPixelText('A', { escala: 2 });
+  assert.strictEqual(e2.w, 10); assert.strictEqual(e2.h, 14);
+  assert.strictEqual(e2.cells[0][2], 1); assert.strictEqual(e2.cells[1][2], 1); assert.strictEqual(e2.cells[0][0], 0);
+  ok('fonte 5x7: largura, espaço e escala');
+
+  // acentos, minúsculas, caracteres não suportados
+  assert.deepStrictEqual(E.renderPixelText('ação').cells, E.renderPixelText('ACAO').cells);
+  const u = E.renderPixelText('A#B');
+  assert.deepStrictEqual(u.ignorados, ['#']);
+  assert.strictEqual(u.w, 11);
+  assert.strictEqual(E.renderPixelText('   ').vazio, true);
+  assert.strictEqual(E.renderPixelText('').vazio, true);
+  ok('fonte 5x7: acentos, minúsculas, não suportados, vazio');
+
+  // limite de tamanho
+  const longo = E.renderPixelText('MARFIM TEXTIL BAHIA CEARA', { escala: 2 });
+  assert.ok(longo.w <= E.MAXW && longo.cortado);
+  ok('texto longo é cortado em 80 colunas');
+
+  // todos os glifos têm 7 linhas de largura uniforme
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,!:\'-+/?'.split('').forEach((ch) => {
+    const g = E.renderPixelText(ch);
+    assert.ok(g.h === 7 && g.cells.every((r) => r.length === g.w), 'glifo ' + ch);
+  });
+  ok('todos os glifos consistentes');
+
+  // girar / espelhar
+  const m = [[1, 0, 0], [1, 1, 0]]; // 2 linhas x 3 colunas
+  assert.deepStrictEqual(E.transformCells(m, { rot: 90 }), [[1, 1], [1, 0], [0, 0]]);
+  assert.deepStrictEqual(E.transformCells(m, { rot: 180 }), [[0, 1, 1], [0, 0, 1]]);
+  assert.deepStrictEqual(E.transformCells(m, { rot: 270 }), [[0, 0], [0, 1], [1, 1]]);
+  assert.deepStrictEqual(E.transformCells(m, { rot: 360 }), m);
+  assert.deepStrictEqual(E.transformCells(m, { flipH: true }), [[0, 0, 1], [0, 1, 1]]);
+  assert.deepStrictEqual(E.transformCells(m, { flipV: true }), [[1, 1, 0], [1, 0, 0]]);
+  assert.deepStrictEqual(E.transformCells(m, { invert: true }), [[0, 1, 1], [0, 0, 1]]);
+  assert.deepStrictEqual(m, [[1, 0, 0], [1, 1, 0]], 'não altera a entrada');
+  // 4 giros de 90 voltam ao original
+  let g = A; for (let i = 0; i < 4; i++) g = E.transformCells(g, { rot: 90 });
+  assert.deepStrictEqual(g, A);
+  ok('posição: girar, espelhar, inverter');
+
+  // reamostragem por média de área
+  const src = new Float32Array([1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]);
+  const r = E.resampleBox(src, 4, 4, 2, 2);
+  assert.deepStrictEqual(Array.from(r), [1, 0, 0, 0.25]);
+  const up = E.resampleBox(new Float32Array([0, 1]), 2, 1, 4, 1);
+  assert.deepStrictEqual(Array.from(up), [0, 0, 1, 1]);
+  ok('reamostragem por área');
+
+  // limiar e pontilhado
+  const dk = [0.1, 0.4, 0.6, 0.9];
+  assert.deepStrictEqual(E.toBits(dk, 4, 1, { limiar: 0.5 })[0], [0, 0, 1, 1]);
+  assert.deepStrictEqual(E.toBits(dk, 4, 1, { limiar: 0.3 })[0], [0, 1, 1, 1]);
+  const cinza = new Float32Array(16).fill(0.5);
+  const dt = E.toBits(cinza, 4, 4, { dither: true });
+  const pintados = dt.flat().reduce((s2, v) => s2 + v, 0);
+  assert.ok(pintados >= 6 && pintados <= 10, 'cinza 50% pinta ~metade, pintou ' + pintados);
+  assert.ok(E.toBits(new Float32Array(16).fill(0), 4, 4, { dither: true }).flat().every((v) => v === 0));
+  assert.ok(E.toBits(new Float32Array(16).fill(1), 4, 4, { dither: true }).flat().every((v) => v === 1));
+  ok('limiar e pontilhado');
+
+  // RGBA -> escuridão (preto opaco = 1, branco = 0, transparente = 0)
+  const px = new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 0, 128, 128, 128, 255]);
+  const d = E.darknessFromRGBA(px, 4, 1);
+  assert.ok(d[0] === 1 && d[1] === 0 && d[2] === 0 && Math.abs(d[3] - 0.498) < 0.01);
+  ok('RGBA para escuridão');
+
+  // colunas distintas do A e quadros previstos com texto
+  assert.strictEqual(E.colunasDistintas(A), 2);
+  const pal = E.renderPixelText('FITA');
+  const rr = E.build(E.norm({ ourela: 0, gap: 1, motif: { w: pal.w, h: pal.h, cells: pal.cells } }));
+  assert.ok(rr.quadros >= 4 && rr.quadros <= 2 + E.colunasDistintas(pal.cells) + 1);
+  ok('colunas distintas e quadros de uma palavra: ' + rr.quadros + ' quadros');
+})();
+
+(function () {
+  const ok = (n) => console.log('ok - ' + n);
+  const pal = E.renderPixelText('FITA 2026');
+  const total = E.colunasDistintas(pal.cells);
+  const simp = E.simplificarColunas(pal.cells, 5);
+  assert.ok(total > 5);
+  assert.strictEqual(E.colunasDistintas(simp), 5);
+  assert.strictEqual(simp.length, pal.h);
+  assert.strictEqual(simp[0].length, pal.w);
+  assert.deepStrictEqual(E.simplificarColunas(pal.cells, total), pal.cells, 'sem mudança quando já cabe');
+  ok('simplificar colunas: reduz para o máximo pedido e mantém o tamanho');
+
+  const cfg = E.norm({ ourela: 0, gap: 1, motif: { w: pal.w, h: pal.h, cells: pal.cells } });
+  const q0 = E.build(cfg).quadros;
+  const alvo = Math.max(4, Math.floor(q0 / 2));
+  const r = E.colunasParaCaber(cfg, pal.cells, alvo);
+  assert.ok(r !== null && r.n < total);
+  const q1 = E.build(Object.assign({}, cfg, { motif: { w: pal.w, h: pal.h, cells: r.cells } })).quadros;
+  assert.ok(q1 <= alvo, `${q1} <= ${alvo}`);
+  assert.strictEqual(E.colunasDistintas(r.cells), r.n);
+  assert.strictEqual(E.colunasParaCaber(cfg, pal.cells, 1), null, 'nem o fundo cabe em 1 quadro');
+  ok('colunas para caber: ' + q0 + ' quadros -> ' + q1 + ' (limite ' + alvo + ')');
+})();
+
+(function () {
+  const ok = (n) => console.log('ok - ' + n);
+  const cheio = [[1, 1, 1], [1, 1, 1], [1, 1, 1]];
+  assert.deepStrictEqual(E.morfologia(cheio, 'afinar'), [[0, 0, 0], [0, 1, 0], [0, 0, 0]]);
+  assert.deepStrictEqual(E.morfologia(cheio, 'contorno'), [[1, 1, 1], [1, 0, 1], [1, 1, 1]]);
+  assert.deepStrictEqual(E.morfologia([[0, 0, 0], [0, 1, 0], [0, 0, 0]], 'engrossar'), [[0, 1, 0], [1, 1, 1], [0, 1, 0]]);
+  assert.deepStrictEqual(E.morfologia(cheio, 'nenhum'), cheio);
+  ok('morfologia: engrossar, afinar, contorno');
+})();

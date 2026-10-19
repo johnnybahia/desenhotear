@@ -42,12 +42,116 @@
         <button type="button" class="on" data-tool="paint">Pintar</button>
         <button type="button" data-tool="erase">Apagar</button>
       </div>
+      <button type="button" class="btn" id="btnDesfazer">Desfazer</button>
       <button type="button" class="btn" id="btnLimpar">Limpar</button>
-      <button type="button" class="btn" id="btnInverter">Inverter</button>
-      <button type="button" class="btn" id="btnEspelhar">Espelhar</button>
     </div>
+    <div class="row tools" aria-label="Posição do desenho">
+      <button type="button" class="btn" id="btnGirarD" title="Girar 90° para a direita">Girar ↻</button>
+      <button type="button" class="btn" id="btnGirarE" title="Girar 90° para a esquerda">Girar ↺</button>
+      <button type="button" class="btn" id="btnEspelhar" title="Espelhar esquerda/direita">Espelhar ↔</button>
+      <button type="button" class="btn" id="btnEspelharV" title="Espelhar de cima para baixo">Espelhar ↕</button>
+      <button type="button" class="btn" id="btnInverter" title="Troca pintado e vazio">Inverter cores</button>
+    </div>
+    <p id="gridMsg" class="hint" hidden></p>
     <div class="gridwrap"><canvas id="grid" aria-label="Grade do desenho"></canvas></div>
     <p class="hint">Cada quadrado é 1 coluna de detalhe × 1 passada. Pintado: o fio de detalhe aparece na frente. A passada 1 fica no topo.</p>
+  </section>
+
+
+  <section class="card" id="sec-gerar">
+    <h2>Texto ou imagem <small>(vira desenho na grade)</small></h2>
+    <div class="seg" role="radiogroup" aria-label="Origem">
+      <button type="button" class="on" data-src="texto">Texto</button>
+      <button type="button" data-src="imagem">Imagem</button>
+    </div>
+
+    <div id="g-texto">
+      <div class="row">
+        <label style="flex:2 1 220px">Texto
+          <input id="txt" type="text" maxlength="40" placeholder="ex.: MARFIM" autocomplete="off">
+        </label>
+        <label>Fonte
+          <select id="txtFonte">
+            <option value="pixel">Pixel 5×7 (nítida)</option>
+            <option value="sistema">Fonte do aparelho</option>
+          </select>
+        </label>
+        <label id="lblEscala">Tamanho
+          <select id="txtEscala"><option value="1">1× (7 linhas)</option><option value="2">2× (14)</option><option value="3">3× (21)</option><option value="4">4× (28)</option></select>
+        </label>
+        <label id="lblFamilia" hidden>Estilo
+          <select id="txtFamilia">
+            <option value='"Arial Black", Arial, Helvetica, sans-serif'>Sem serifa negrito</option>
+            <option value='Georgia, "Times New Roman", serif'>Com serifa</option>
+            <option value='Impact, "Arial Narrow", sans-serif'>Condensada</option>
+            <option value='"Courier New", monospace'>Máquina de escrever</option>
+          </select>
+        </label>
+        <label id="lblAltura" hidden>Altura (linhas)
+          <input id="txtAltura" type="number" min="5" max="120" value="14" inputmode="numeric">
+        </label>
+        <label id="lblEspaco">Espaço entre letras
+          <input id="txtEspaco" type="number" min="0" max="10" value="1" inputmode="numeric">
+        </label>
+      </div>
+    </div>
+
+    <div id="g-imagem" hidden>
+      <div class="row">
+        <label style="flex:2 1 220px">Imagem (foto, logotipo, silhueta)
+          <input id="imgFile" type="file" accept="image/*">
+        </label>
+        <label>Largura (colunas)
+          <input id="imgCols" type="number" min="4" max="80" value="24" inputmode="numeric">
+        </label>
+        <label>Altura (linhas)
+          <input id="imgRows" type="number" min="4" max="120" value="24" inputmode="numeric">
+        </label>
+        <label class="chk"><input id="imgLock" type="checkbox" checked> Manter proporção da imagem</label>
+      </div>
+      <div class="row">
+        <label>Quantidade de preto
+          <input id="limiar" type="range" min="5" max="95" value="50">
+        </label>
+        <label class="chk"><input id="dither" type="checkbox"> Pontilhado (meio-tom, para fotos)</label>
+      </div>
+    </div>
+
+    <details class="more">
+      <summary>Mais opções</summary>
+      <div class="row">
+        <label>Traço
+          <select id="morf">
+            <option value="">Normal</option>
+            <option value="engrossar">Engrossar</option>
+            <option value="afinar">Afinar</option>
+            <option value="contorno">Só o contorno</option>
+          </select>
+        </label>
+        <label class="chk"><input id="invCor" type="checkbox"> Inverter claro/escuro (desenho no fundo)</label>
+        <label>Proporção do pixel (largura ÷ altura)
+          <input id="aspecto" type="text" inputmode="decimal" value="1">
+        </label>
+        <button type="button" class="btn" id="btnAspProd" title="Usa fios por cm e batidas por cm da seção Produção">Calcular pela produção</button>
+      </div>
+      <p class="hint">A proporção corrige o achatamento: se um quadrado da grade ocupa mais largura que altura na fita, use um valor maior que 1.</p>
+    </details>
+
+    <div class="row">
+      <label>Limite de quadros (opcional)
+        <input id="gMaxQ" type="number" min="0" inputmode="numeric" placeholder="sem limite">
+      </label>
+      <label class="chk"><input id="simp" type="checkbox"> Simplificar o desenho para caber nesse limite</label>
+    </div>
+
+    <div class="genprev">
+      <canvas id="prev" aria-label="Prévia do desenho gerado"></canvas>
+      <div>
+        <div id="prevInfo" class="previnfo"></div>
+        <button type="button" class="btn primary" id="btnAplicar">Aplicar na grade</button>
+        <p class="hint">Depois de aplicar, ajuste à mão, gire ou espelhe na seção Desenho. O botão Desfazer volta ao desenho anterior.</p>
+      </div>
+    </div>
   </section>
 
   <section class="card">
