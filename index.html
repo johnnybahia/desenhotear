@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Desenho para fita</title>
+<meta name="theme-color" content="#1f3a5f">
+<meta name="description" content="Gera o desenho alto e baixo, o número de quadros e a prévia frente e verso para teares de fita.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>Desenho para fita</h1>
+    <p class="sub">Pinte o desenho, escolha o ligamento e veja quadros, corrente e prévia.</p>
+  </div>
+  <button id="btnInstalar" class="btn" hidden>Instalar</button>
+</header>
+
+<main>
+  <section class="card" id="sec-desenho">
+    <h2><span class="n">1</span> Desenho</h2>
+    <div class="row">
+      <label>Modelo
+        <select id="preset"></select>
+      </label>
+      <label>Colunas
+        <input id="mw" type="number" min="1" max="80" inputmode="numeric">
+      </label>
+      <label>Linhas
+        <input id="mh" type="number" min="1" max="120" inputmode="numeric">
+      </label>
+      <label>Distância entre desenhos (passadas)
+        <input id="gap" type="number" min="0" max="200" inputmode="numeric">
+      </label>
+    </div>
+    <div class="row tools">
+      <div class="seg" role="radiogroup" aria-label="Ferramenta">
+        <button type="button" class="on" data-tool="paint">Pintar</button>
+        <button type="button" data-tool="erase">Apagar</button>
+      </div>
+      <button type="button" class="btn" id="btnLimpar">Limpar</button>
+      <button type="button" class="btn" id="btnInverter">Inverter</button>
+      <button type="button" class="btn" id="btnEspelhar">Espelhar</button>
+    </div>
+    <div class="gridwrap"><canvas id="grid" aria-label="Grade do desenho"></canvas></div>
+    <p class="hint">Cada quadrado é 1 coluna de detalhe × 1 passada. Pintado: o fio de detalhe aparece na frente. A passada 1 fica no topo.</p>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">2</span> Estrutura</h2>
+    <div class="opts" id="estruturas">
+      <label class="opt"><input type="radio" name="estrutura" value="chapado"><b>Chapado</b><span>Desenho só na frente. Verso em negativo.</span></label>
+      <label class="opt"><input type="radio" name="estrutura" value="duplo"><b>Duplo</b><span>Desenho dos dois lados, fita plana (2 camadas).</span></label>
+      <label class="opt"><input type="radio" name="estrutura" value="tubular"><b>Tubular</b><span>Desenho dos dois lados, formando um tubo.</span></label>
+    </div>
+    <div class="row">
+      <label>Detalhe no fundo
+        <select id="detalheMode">
+          <option value="flutuado">Flutuado (sobe onde pinta)</option>
+          <option value="ligado">Ligado (amarra a cada 2 passadas)</option>
+        </select>
+      </label>
+      <label class="chk"><input id="verso" type="checkbox"> Verso legível (espelha o desenho atrás)</label>
+      <label class="chk"><input id="intercala" type="checkbox"> Fundo entre as colunas do desenho (desmarque para fios de detalhe lado a lado)</label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">3</span> Ligamento do fundo</h2>
+    <div id="ligs" class="ligs"></div>
+    <p class="hint">Mostra quadros e peças de cada ligamento com as suas configurações. Em vermelho: estoura um limite.</p>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">4</span> Fios</h2>
+    <div class="row">
+      <label>Fios por liço — fundo (urdume)
+        <input id="fiosFundo" type="number" min="1" max="20" inputmode="numeric">
+      </label>
+      <label>Fios por liço — detalhe
+        <input id="fiosDetalhe" type="number" min="1" max="20" inputmode="numeric">
+      </label>
+      <label>Ourela: liços de cada lado
+        <input id="ourela" type="number" min="0" max="20" inputmode="numeric">
+      </label>
+      <label>Fios por liço — ourela
+        <input id="fiosOurela" type="number" min="1" max="20" inputmode="numeric">
+      </label>
+    </div>
+    <div class="row colors">
+      <label>Fundo <input id="cFundo" type="color"></label>
+      <label>Detalhe <input id="cDetalhe" type="color"></label>
+      <label>Trama <input id="cTrama" type="color"></label>
+      <label>Ourela <input id="cOurela" type="color"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">5</span> Limites <small>(opcional)</small></h2>
+    <div class="row">
+      <label>Mínimo de peças
+        <input id="minPecas" type="number" min="1" inputmode="numeric">
+      </label>
+      <label>Máximo de peças
+        <input id="maxPecas" type="number" min="0" inputmode="numeric" placeholder="sem limite">
+      </label>
+      <label>Máximo de quadros
+        <input id="maxQuadros" type="number" min="0" inputmode="numeric" placeholder="sem limite">
+      </label>
+      <label>Flutuação máxima (passadas)
+        <input id="maxFlut" type="number" min="0" inputmode="numeric">
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">6</span> Produção <small>(opcional)</small></h2>
+    <div class="row">
+      <label>Batidas de trama por minuto
+        <input id="bpm" type="text" inputmode="decimal" placeholder="ex.: 300">
+      </label>
+      <label>Batidas por cm
+        <input id="bpcm" type="text" inputmode="decimal" placeholder="ex.: 20">
+      </label>
+      <label>Fios por cm
+        <input id="fiosCm" type="text" inputmode="decimal" placeholder="ex.: 40">
+      </label>
+      <label>Metros a produzir
+        <input id="metros" type="text" inputmode="decimal" placeholder="ex.: 1000">
+      </label>
+    </div>
+    <div id="prodOut" class="prod"></div>
+  </section>
+
+  <section class="card results" id="sec-res">
+    <h2>Resultado</h2>
+    <div id="resumo" class="metrics"></div>
+    <div id="avisos" class="avisos"></div>
+    <div id="alts"></div>
+
+    <h3>Prévia da fita</h3>
+    <div class="row tools">
+      <label>Zoom <input id="zoom" type="range" min="1" max="5" step="0.5" value="2"></label>
+      <label>Repetições
+        <select id="reps"><option>1</option><option selected>2</option><option>3</option><option>4</option></select>
+      </label>
+      <button type="button" class="btn" id="btnPng">Baixar imagens</button>
+    </div>
+    <div class="imgs">
+      <figure><div class="scroll"><canvas id="cvFrente"></canvas></div><figcaption>Frente</figcaption></figure>
+      <figure><div class="scroll"><canvas id="cvVerso"></canvas></div><figcaption>Verso</figcaption></figure>
+    </div>
+    <p class="hint">Simulação fio a fio com as cores escolhidas. Não considera espessura real do fio.</p>
+
+    <h3>Quadros</h3>
+    <div class="scroll"><table id="tbQuadros" class="tb"></table></div>
+
+    <h3>Desenho alto e baixo (corrente)</h3>
+    <div class="row tools">
+      <button type="button" class="btn" id="btnCopiar">Copiar tabela</button>
+      <button type="button" class="btn" id="btnCsv">Baixar CSV</button>
+      <button type="button" class="btn" id="btnPrint">Imprimir</button>
+    </div>
+    <div class="scroll chain"><table id="tbCorrente" class="tb mono"></table></div>
+    <p class="hint">A = alto (fio levantado) · B = baixo. Cada linha é uma peça da corrente, de cima para baixo.</p>
+
+    <h3>Passagem nos liços (esquerda → direita)</h3>
+    <pre id="passagem" class="pass"></pre>
+  </section>
+
+  <section class="card">
+    <h2>Projetos</h2>
+    <div class="row">
+      <label>Nome
+        <input id="pNome" type="text" placeholder="ex.: Fita A azul">
+      </label>
+      <button type="button" class="btn" id="btnSalvar">Salvar</button>
+    </div>
+    <div id="pLista" class="plist"></div>
+    <div class="row tools">
+      <button type="button" class="btn" id="btnExport">Exportar JSON</button>
+      <label class="btn filebtn">Importar JSON<input id="fileImp" type="file" accept=".json,application/json" hidden></label>
+      <button type="button" class="btn" id="btnReset">Restaurar padrão</button>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">Duplo e tubular usam um modelo simplificado. Valide a primeira corrente no tear.</footer>
+
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
