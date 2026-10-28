@@ -1,7 +1,8 @@
-const CACHE = 'desenho-fita-v1';
+const CACHE = 'desenho-fita-v2';
 const ASSETS = [
   './', './index.html', './style.css', './engine.js', './app.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',
+  './assets/peca-x.png', './assets/peca-a.png', './assets/peca-o.png',
 ];
 
 self.addEventListener('install', (e) => {
